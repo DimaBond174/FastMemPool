@@ -14,12 +14,14 @@
 #include <stdint.h>
 #include <algorithm>
 #include <string.h>
+#include <stdexcept>
 
 #if defined(Debug)
 #include <string>
 #include <map>
 #include <mutex>
 #endif
+
 
 /*
  * Вашему вниманию простой template аллокатора с потокобезопасным циклическим буфером.
@@ -62,9 +64,27 @@
  *
  * Подключение вызова Exeptions  на ошибки:
  *
+ * Компиляция:
+ * При компиляции под Windows в Qt Creator с инструментами MSVC2017 были замечены проблемы в работе.
+ * Нормально  работает при сборке в VisualStudio 2019 (проект Visual Studio готовил через CMake GUI)
+ *
+ * Под Linux Ubuntu 16.04 протестирована сборка в Clang 8.0, тесты стабильно работают
 */
-template<int Leaf_Size_Bytes = 65535,  int Average_Allocation = 655,
-         bool Need_Registry = false,  bool Raise_Exeptions = false>
+
+#ifndef DEF_Leaf_Size_Bytes
+#define DEF_Leaf_Size_Bytes  65535
+#endif
+#ifndef DEF_Average_Allocation
+#define DEF_Average_Allocation  655
+#endif
+#ifndef DEF_Need_Registry
+#define DEF_Need_Registry  false
+#endif
+#ifndef DEF_Raise_Exeptions
+#define DEF_Raise_Exeptions  true
+#endif
+template<int Leaf_Size_Bytes = DEF_Leaf_Size_Bytes,  int Average_Allocation = DEF_Average_Allocation,
+         bool Need_Registry = DEF_Need_Registry,  bool Raise_Exeptions = DEF_Raise_Exeptions>
 class FastMemPool
 {
 public:
@@ -118,6 +138,7 @@ public:
     bool  do_OS_malloc  =  !re;
     if  (do_OS_malloc)
     {  // Вот сейчас произойдёт эскалация до OS malloc:
+      //throw std::exception("do_OS_malloc");
       // Паттерн "Chain of responsibility" в действии:
       re  =  static_cast<char *>(malloc(real_size));
     }
@@ -286,9 +307,9 @@ public:
    * ВАЖНО: полагаемся на то что линковщик сможет убрать дубли этого метода
    * из всех translation unit -ов.. при условии одинаковых параметров шаблона
    */
-  static FastMemPool & instance() {
+  static FastMemPool * instance() {
     static FastMemPool  fastMemPool;
-    return fastMemPool;
+    return &fastMemPool;
   }
 
   ~FastMemPool()  noexcept
@@ -300,13 +321,19 @@ public:
     return;
   }
 
+  FastMemPool &operator=(const FastMemPool &) = delete;
+  FastMemPool (const FastMemPool &) = delete;
+
+  FastMemPool &operator=(FastMemPool &&) = delete;
+  FastMemPool (FastMemPool &&) = delete;
+
 #if defined(Debug)
   void  * fmallocd(const char *filename, unsigned int line, const char *function_name,  std::size_t  allocation_size)
   {
     void  *re  =  fmalloc(allocation_size);
     if (re)
     {
-      std::lock_guard  lg(mut_map_alloc_info);
+      std::lock_guard<std::mutex>  lg(mut_map_alloc_info);
       auto it = map_alloc_info.try_emplace(re,  AllocInfo());
       if (it.first->second.allocated)  {
         std::string err("FastMemPool::fmallocd: already allocated by ");
@@ -329,7 +356,7 @@ public:
     if (ptr)
     {
       {
-        std::lock_guard  lg(mut_map_alloc_info);
+        std::lock_guard<std::mutex>  lg(mut_map_alloc_info);
         auto it = map_alloc_info.find(ptr);
         if (map_alloc_info.end() == it)
         {
@@ -352,11 +379,33 @@ public:
     return;
   } // ffreed
 
+  bool  check_accessd(const char *filename, unsigned int line, const char *function_name,  void  *base_alloc_ptr,  void  *target_ptr,  std::size_t  target_size)
+  {
+    bool  re   =  false ;
+    try {
+      re  =  check_access(base_alloc_ptr,  target_ptr,  target_size);
+    } catch (std::range_error e) {
+
+    }
+
+    if (!re)
+    {
+      std::string who("FastMemPool::check_accessd buffer overflow at ");
+      who.append(filename).append(", at ")
+          .append(std::to_string(line)).append("  line, in ").append(function_name);
+      if constexpr (Raise_Exeptions)
+      {
+          throw std::range_error(who);
+      }
+    }
+    return  re;
+  } // check_accessd
+
 #endif
 private:
 
   struct Leaf
-  {    
+  {
       char  *buf;
       // available == offset наоборот
       std::atomic<int>  available  {  Leaf_Size_Bytes  };
@@ -408,10 +457,10 @@ private:
 */
 #if defined(Debug)
 #define FMALLOC(iFastMemPool, allocation_size) \
-   iFastMemPool.fmallocd (__FILE__, __LINE__, __FUNCTION__, allocation_size)
+   iFastMemPool->fmallocd (__FILE__, __LINE__, __FUNCTION__, allocation_size)
 #else
 #define FMALLOC(iFastMemPool, allocation_size) \
-   iFastMemPool.fmalloc (allocation_size)
+   iFastMemPool->fmalloc (allocation_size)
 #endif
 
 /**
@@ -421,10 +470,10 @@ private:
  */
 #if defined(Debug)
 #define FFREE(iFastMemPool, ptr) \
-   iFastMemPool.ffreed (__FILE__, __LINE__, __FUNCTION__, ptr)
+   iFastMemPool->ffreed (__FILE__, __LINE__, __FUNCTION__, ptr)
 #else
 #define FFREE(iFastMemPool, ptr) \
-   iFastMemPool.ffree (ptr)
+   iFastMemPool->ffree (ptr)
 #endif
 
 /**
@@ -438,10 +487,10 @@ private:
  */
 #if defined(Debug)
 #define FCHECK_ACCESS(iFastMemPool, base_alloc_ptr, target_ptr, target_size) \
-   iFastMemPool.check_access (__FILE__, __LINE__, __FUNCTION__, base_alloc_ptr,  target_ptr,  target_size)
+   iFastMemPool->check_accessd (__FILE__, __LINE__, __FUNCTION__, base_alloc_ptr,  target_ptr,  target_size)
 #else
 #define FCHECK_ACCESS(iFastMemPool, base_alloc_ptr, target_ptr, target_size) \
-   iFastMemPool.check_access (base_alloc_ptr,  target_ptr,  target_size)
+   iFastMemPool->check_access (base_alloc_ptr,  target_ptr,  target_size)
 #endif
 
 template<class T>
