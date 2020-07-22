@@ -21,17 +21,23 @@ message("Provide_inline_unit_tests: ${Provide_inline_unit_tests}")
 # TODO Needto build Tests :
 option(CREATE_TESTS "Create tests" ON)
 
-# TODO Set the size of each of 256 leaves of memory:
-set(TEST_Mem_Pool_Leaf_Size_bytes "65536" CACHE PATH "Size of each memory pool leaf")
-message("TEST_Mem_Pool_Leaf_Size_bytes: ${TEST_Mem_Pool_Leaf_Size_bytes}")
-
-# TODO Set the average size of the planned allocation:
-set(TEST_Average_malloc_size "1000" CACHE PATH "Size of average malloc")
-message("TEST_Average_malloc_size: ${TEST_Average_malloc_size}")
-
 # TODO Set bin folder:
 set(PROJ_EXEC_BIN_FOLDER "../fast_mem_pool_bin" CACHE PATH "Binary output folder")
 message("PROJ_EXEC_BIN_FOLDER: ${PROJ_EXEC_BIN_FOLDER}")
+
+# TODO Set project defaults:
+set(DEF_Leaf_Size_Bytes "65536" CACHE PATH "Size of each memory pool leaf")
+message("DEF_Leaf_Size_Bytes: ${DEF_Leaf_Size_Bytes}")
+
+set(DEF_Leaf_Cnt "16" CACHE PATH "Memory pool leaf count")
+message("DEF_Leaf_Cnt: ${DEF_Leaf_Cnt}")
+
+set(DEF_Average_Allocation "512" CACHE PATH "Average allocation from malloc")
+message("DEF_Average_Allocation: ${DEF_Average_Allocation}")
+
+option(DEF_Need_Registry "Need registry of all allocations" OFF)
+option(DEF_Raise_Exeptions "Need raise exeptions on Errors" ON)
+option(DEF_Do_OS_malloc "If this memory pool depleted go do OS malloc" ON)
 
 
 set(SPEC_PROPERTIES
@@ -83,9 +89,35 @@ set(SPEC_DEFINITIONS
       ${CMAKE_BUILD_TYPE}
       ${SPEC_BUILD}
       SPEC_VERSION="${Proj_VERSION}"
-      TEST_Mem_Pool_Leaf_Size_bytes="${TEST_Mem_Pool_Leaf_Size_bytes}"
-      TEST_Average_malloc_size="${TEST_Average_malloc_size}"
+      DEF_Leaf_Size_Bytes=${DEF_Leaf_Size_Bytes}
+      DEF_Leaf_Cnt=${DEF_Leaf_Cnt}
+      DEF_Average_Allocation=${DEF_Average_Allocation}
+      DEF_Need_Registry=${DEF_Need_Registry}
   )
+
+if (DEF_Need_Registry)
+  set(SPEC_DEFINITIONS ${SPEC_DEFINITIONS}
+    DEF_Need_Registry=true)
+else()
+  set(SPEC_DEFINITIONS ${SPEC_DEFINITIONS}
+    DEF_Need_Registry=false)
+endif()
+
+if (DEF_Raise_Exeptions)
+  set(SPEC_DEFINITIONS ${SPEC_DEFINITIONS}
+    DEF_Raise_Exeptions=true)
+else()
+  set(SPEC_DEFINITIONS ${SPEC_DEFINITIONS}
+    DEF_Raise_Exeptions=false)
+endif()
+
+if (DEF_Do_OS_malloc)
+  set(SPEC_DEFINITIONS ${SPEC_DEFINITIONS}
+    DEF_Do_OS_malloc=true)
+else()
+  set(SPEC_DEFINITIONS ${SPEC_DEFINITIONS}
+    DEF_Do_OS_malloc=false)
+endif()
 
 if (Provide_inline_unit_tests)
   message("will compile with Provide_inline_unit_tests")

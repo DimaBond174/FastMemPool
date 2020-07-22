@@ -22,6 +22,25 @@
 #include <mutex>
 #endif
 
+#ifndef DEF_Leaf_Size_Bytes
+#define DEF_Leaf_Size_Bytes  65535
+#endif
+#ifndef DEF_Leaf_Cnt
+#define DEF_Leaf_Cnt  16
+#endif
+#ifndef DEF_Average_Allocation
+#define DEF_Average_Allocation  655
+#endif
+#ifndef DEF_Need_Registry
+#define DEF_Need_Registry  false
+#endif
+#ifndef DEF_Raise_Exeptions
+#define DEF_Raise_Exeptions  true
+#endif
+#ifndef DEF_Do_OS_malloc
+#define DEF_Do_OS_malloc  true
+#endif
+
 
 /*
  * Вашему вниманию простой template аллокатора с потокобезопасным циклическим буфером.
@@ -44,47 +63,30 @@
  *
  * Налагаемые обязательства:
  *  - для работы циклического буфера FastMemPool будет
- *    аллоцировано 256 листов памяти размером Leaf_Size_Bytes.
+ *    аллоцировано Leaf_Cnt листов памяти размером Leaf_Size_Bytes.
  *    Если Leaf_Size_Bytes не хватит для требуемой аллокации, то будет выполнен OS malloc -
  *    поэтому Leaf_Size_Bytes должен быть значительно больше среднестатистической Вашей аллокации.
  *
  * - желательно (но не обязательно) чтобы аллокации проходили цикл равномерно,
  *   Например: если аллокации идут для сессий пользователей, то эти сессии должны быть ограничены во времени.
  *  (листы аллокаций возвращаются в работу после истощения с последней деаллокацией на своём листе,
- *   если кто-то держит аллокацию бесконечно, то соответствующий один из 256 листов будет простаивать.
- *   если заблокировать все 256 листов, то преимуществом перед OS malloc останется только контроль памяти)
+ *   если кто-то держит аллокацию бесконечно, то соответствующий один из Leaf_Cnt листов будет простаивать.
+ *   если заблокировать все Leaf_Cnt листов, то преимуществом перед OS malloc останется только контроль памяти)
  *
  * - желательно FastMemPool конструировать когда ещё на сервере оперативной памяти в избытке, так как
- *   если из 256 листов несколько OS не сможет аллоцировать, то эти nullptr прорешины не будут работать.
+ *   если из Leaf_Cnt листов несколько OS не сможет аллоцировать, то эти nullptr прорешины не будут работать.
  *
  * Примеры использования:
- * Обычное, с  определением размера каждого из 256 листов памяти:
+ * Обычное, с  определением размера каждого из Leaf_Cnt листов памяти:
  *
  * Подключение ведения списка аллокаций  для контроля и автодеаллокации:
  *
  * Подключение вызова Exeptions  на ошибки:
  *
- * Компиляция:
- * При компиляции под Windows в Qt Creator с инструментами MSVC2017 были замечены проблемы в работе.
- * Нормально  работает при сборке в VisualStudio 2019 (проект Visual Studio готовил через CMake GUI)
- *
- * Под Linux Ubuntu 16.04 протестирована сборка в Clang 8.0, тесты стабильно работают
 */
-
-#ifndef DEF_Leaf_Size_Bytes
-#define DEF_Leaf_Size_Bytes  65535
-#endif
-#ifndef DEF_Average_Allocation
-#define DEF_Average_Allocation  655
-#endif
-#ifndef DEF_Need_Registry
-#define DEF_Need_Registry  false
-#endif
-#ifndef DEF_Raise_Exeptions
-#define DEF_Raise_Exeptions  true
-#endif
-template<int Leaf_Size_Bytes = DEF_Leaf_Size_Bytes,  int Average_Allocation = DEF_Average_Allocation,
-         bool Need_Registry = DEF_Need_Registry,  bool Raise_Exeptions = DEF_Raise_Exeptions>
+template<int Leaf_Size_Bytes = DEF_Leaf_Size_Bytes, int Leaf_Cnt = DEF_Leaf_Cnt,
+  int Average_Allocation = DEF_Average_Allocation, bool Do_OS_malloc = DEF_Do_OS_malloc,
+  bool Need_Registry = DEF_Need_Registry,  bool Raise_Exeptions = DEF_Raise_Exeptions>
 class FastMemPool
 {
 public:
@@ -99,9 +101,9 @@ public:
     // Аллокация будет в себя включать заголовок со служебной информацией
     const int  real_size = allocation_size  +  sizeof(AllocHeader);
     // Текущий лист RAM который сейчас распределяется, но в целом всё равно откуда:
-    const uint8_t start_leaf = cur_leaf.load(std::memory_order_relaxed);
-    // Идентификатор листа для циклического обхода (переполнением 256):
-    uint8_t leaf_id = start_leaf;
+    const int start_leaf = cur_leaf.load(std::memory_order_relaxed);
+    // Идентификатор листа для циклического обхода:
+    int leaf_id = start_leaf;
     // Результирующая аллокация:
     char  *re  =  nullptr;
 
@@ -127,20 +129,34 @@ public:
           re  =  leaf_array[leaf_id].buf + available_after;
           if (available_after < Average_Allocation)
           {  // Расскажем остальным потокам что следует использовать другую страницу памяти:
-             ++cur_leaf;
+            const int next_id = start_leaf + 1;
+            if (next_id >= Leaf_Cnt)
+            {
+              cur_leaf.store(0, std::memory_order_release);
+            } else {
+              cur_leaf.store(next_id, std::memory_order_release);
+            }
           }
           break; // закончили поиск, отдаём указатель аллокации
         }
       }
       ++leaf_id;
+      if (Leaf_Cnt == leaf_id)  {  leaf_id  =  0;  }
     } while (leaf_id  !=  start_leaf);
 
     bool  do_OS_malloc  =  !re;
     if  (do_OS_malloc)
     {  // Вот сейчас произойдёт эскалация до OS malloc:
-      //throw std::exception("do_OS_malloc");
-      // Паттерн "Chain of responsibility" в действии:
-      re  =  static_cast<char *>(malloc(real_size));
+      if (Do_OS_malloc)
+      {
+        // Паттерн "Chain of responsibility" в действии:
+        re = static_cast<char*>(malloc(real_size));
+      } else {
+        if constexpr (Raise_Exeptions)
+        {
+          throw std::range_error("FastMemPool::fmalloc: need do_OS_malloc, but it disabled");
+        }
+      }
     }
 
     if (re)
@@ -155,9 +171,10 @@ public:
         head->tag  =  TAG_my_alloc  +  leaf_id;
       }
       head->size  =  allocation_size;
+      return  (re + sizeof(AllocHeader));
     }
 
-    return  ( re + sizeof(AllocHeader) );
+    return  nullptr;
   }  // fmalloc
 
 
@@ -170,7 +187,7 @@ public:
     char  *to_free  =  static_cast<char  *>(ptr)  -  sizeof(AllocHeader);
     AllocHeader  *head  =  reinterpret_cast<AllocHeader  *>(to_free);
     if  (0 <= head->size  &&  head->size < Leaf_Size_Bytes
-         &&  0 <= head->leaf_id  &&  head->leaf_id < 256
+         &&  0 <= head->leaf_id  &&  head->leaf_id < Leaf_Cnt
          &&  TAG_my_alloc == (head->tag - head->leaf_id)
          &&  leaf_array[head->leaf_id].buf)
     {  //  ок, это моя аллокация
@@ -218,7 +235,7 @@ public:
     bool  re  = false;
     AllocHeader  *head  =  reinterpret_cast<AllocHeader  *>(static_cast<char  *>(base_alloc_ptr)  -  sizeof(AllocHeader));
     if  (0 <= head->size  &&  head->size < Leaf_Size_Bytes
-         &&  0 <= head->leaf_id  &&  head->leaf_id < 256
+         &&  0 <= head->leaf_id  &&  head->leaf_id < Leaf_Cnt
          &&  TAG_my_alloc == (head->tag - head->leaf_id))
     {  //  ок, это FastMemPool аллокация
       // проверим этого ли экземпляра FastMemPool:
@@ -277,14 +294,14 @@ public:
    */
   FastMemPool()  noexcept
   {
-    void  *buf_array[256];
-    for (int   i  =  0;  i  <  256 ;  ++i)
+    void  *buf_array[Leaf_Cnt];
+    for (int   i  =  0;  i  < Leaf_Cnt ;  ++i)
     {
       buf_array[i]  =  malloc(Leaf_Size_Bytes);
     }
     std::sort(std::begin(buf_array), std::end(buf_array), [](const void * lh, const void * rh) { return (uint64_t)(lh) < (uint64_t)(rh); });
     uint64_t last = 0;
-    for (int   i  =  0;  i  <  256 ;  ++i)
+    for (int   i  =  0;  i  < Leaf_Cnt ;  ++i)
     {
       if (buf_array[i])
       {
@@ -314,7 +331,7 @@ public:
 
   ~FastMemPool()  noexcept
   {
-    for (int   i  =  0;  i  <  256 ;  ++i)
+    for (int   i  =  0;  i  < Leaf_Cnt ;  ++i)
     {
       if (leaf_array[i].buf)  free(leaf_array[i].buf);
     }
@@ -435,8 +452,8 @@ private:
     int  leaf_id  {  -2020071708  };  // быстрый доступ к листу аллокации
   };
 
-  Leaf  leaf_array[256];
-  std::atomic<uint8_t>  cur_leaf  {  0  };
+  Leaf  leaf_array[Leaf_Cnt];
+  std::atomic<int>  cur_leaf  {  0  };
 #if defined(Debug)
   struct AllocInfo {
     std::string  who;  // кто произвёл операцию: файл, номер строки кода, в каком методе
@@ -444,6 +461,12 @@ private:
   };
   std::map<void *,  AllocInfo>  map_alloc_info;
   std::mutex  mut_map_alloc_info;
+  int DLeaf_Size_Bytes  { Leaf_Size_Bytes };
+  int DLeaf_Cnt { Leaf_Cnt };
+  int DAverage_Allocation { Average_Allocation };
+  bool DDo_OS_malloc{ Do_OS_malloc };
+  bool DNeed_Registry { Need_Registry };
+  bool DRaise_Exeptions { Raise_Exeptions };
 #endif
 };
 
@@ -457,10 +480,10 @@ private:
 */
 #if defined(Debug)
 #define FMALLOC(iFastMemPool, allocation_size) \
-   iFastMemPool->fmallocd (__FILE__, __LINE__, __FUNCTION__, allocation_size)
+   (iFastMemPool)->fmallocd (__FILE__, __LINE__, __FUNCTION__, allocation_size)
 #else
 #define FMALLOC(iFastMemPool, allocation_size) \
-   iFastMemPool->fmalloc (allocation_size)
+   (iFastMemPool)->fmalloc (allocation_size)
 #endif
 
 /**
@@ -470,10 +493,10 @@ private:
  */
 #if defined(Debug)
 #define FFREE(iFastMemPool, ptr) \
-   iFastMemPool->ffreed (__FILE__, __LINE__, __FUNCTION__, ptr)
+   (iFastMemPool)->ffreed (__FILE__, __LINE__, __FUNCTION__, ptr)
 #else
 #define FFREE(iFastMemPool, ptr) \
-   iFastMemPool->ffree (ptr)
+   (iFastMemPool)->ffree (ptr)
 #endif
 
 /**
@@ -487,10 +510,10 @@ private:
  */
 #if defined(Debug)
 #define FCHECK_ACCESS(iFastMemPool, base_alloc_ptr, target_ptr, target_size) \
-   iFastMemPool->check_accessd (__FILE__, __LINE__, __FUNCTION__, base_alloc_ptr,  target_ptr,  target_size)
+   (iFastMemPool)->check_accessd (__FILE__, __LINE__, __FUNCTION__, base_alloc_ptr,  target_ptr,  target_size)
 #else
 #define FCHECK_ACCESS(iFastMemPool, base_alloc_ptr, target_ptr, target_size) \
-   iFastMemPool->check_access (base_alloc_ptr,  target_ptr,  target_size)
+   (iFastMemPool)->check_access (base_alloc_ptr,  target_ptr,  target_size)
 #endif
 
 template<class T>
