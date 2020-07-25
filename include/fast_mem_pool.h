@@ -516,24 +516,54 @@ private:
    (iFastMemPool)->check_access (base_alloc_ptr,  target_ptr,  target_size)
 #endif
 
-template<class T>
+struct FastMemPoolNull
+{
+  // Null object
+};
+
+template<class T, class FAllocator = FastMemPoolNull >
 struct FastMemPoolAllocator : public std::allocator<T>  {
-  typedef T value_type;
+  typedef T value_type;  
+  using  MyAllocatorType = FAllocator;  
+  MyAllocatorType * p_allocator  {  nullptr  };
   FastMemPoolAllocator() = default;
+  FastMemPoolAllocator(MyAllocatorType  *in_allocator) : p_allocator(in_allocator) { }
   template <class U> constexpr FastMemPoolAllocator (const FastMemPoolAllocator  <U>&)
   noexcept {}
 
   T* allocate(std::size_t n) {
     if (n > std::numeric_limits<std::size_t>::max() / sizeof (T))
       throw std::bad_alloc();
-    if (auto p = static_cast<T *>(FMALLOC(FastMemPool<>::instance(), (n * sizeof (T)))))
-      return p;
+    if constexpr(std::is_same<FAllocator, FastMemPoolNull>::value)
+    {
+      if (auto p = static_cast<T *>(FMALLOC(FastMemPool<>::instance(), (n * sizeof (T)))))
+        return p;
+    }  else {
+      if (p_allocator) {
+        if (auto p = static_cast<T *>(FMALLOC(p_allocator, (n * sizeof (T)))))
+          return p;
+      } else {
+        if (auto p = static_cast<T *>(FMALLOC(FAllocator::instance(), (n * sizeof (T)))))
+          return p;
+      }
+
+    }
+
     throw  std::bad_alloc();
   } // alloc
 
   void deallocate(T* p,  std::size_t) noexcept
-  {
-    FFREE(FastMemPool<>::instance(), p);
+  {    
+    if constexpr(std::is_same<FAllocator, FastMemPoolNull>::value)
+    {
+      FFREE(FastMemPool<>::instance(),  p);
+    }  else {
+      if (p_allocator) {
+        FFREE(p_allocator,  p);
+      } else {
+        FFREE(FAllocator::instance(),  p);
+      }
+    }
     return;
   }
 
