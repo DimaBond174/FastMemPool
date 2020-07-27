@@ -27,6 +27,8 @@ bool  test_random_access1()
   for (int  i =  1;  i  <  1000  && keep_run.load(std::memory_order_acquire);  ++i)
   {
     int  size  =  rand() % 1000 + 4;
+    // allocate RAM with aka malloc
+    //  + in Debug mode store info about line number of code where this operation was called  :
     void  * ptr  =  FMALLOC(fastMemPool, size);
     if (ptr) {
       vec_random_mem_chanks.emplace_back(static_cast<int  *>(ptr), (size / sizeof (int)));
@@ -35,6 +37,9 @@ bool  test_random_access1()
     }
     int  id  =  rand() % i ;
     auto &&elem = vec_random_mem_chanks[id];
+    //Checking whether this is my allocation and whether
+    //I will go beyond the allocation limits if I perform an operation
+    // on this piece of memory:
     if (FCHECK_ACCESS(fastMemPool, elem.array, &elem.array[elem.array_size - 1], sizeof (int))) {
       elem.array[elem.array_size - 1] = rand();
     }

@@ -345,6 +345,15 @@ public:
   FastMemPool (FastMemPool &&) = delete;
 
 #if defined(Debug)
+  /**
+   * @brief fmallocd
+   * Декоратор для метода fmalloc - сохраняет информацию о месте аллокации
+   * @param filename
+   * @param line
+   * @param function_name
+   * @param allocation_size
+   * @return
+   */
   void  * fmallocd(const char *filename, unsigned int line, const char *function_name,  std::size_t  allocation_size)
   {
     void  *re  =  fmalloc(allocation_size);
@@ -368,6 +377,16 @@ public:
     return  re;
   }
 
+  /**
+   * @brief ffreed
+   * Декоратор для метода ffree
+   * - сохраняет информацию о месте деаллокации
+   * - в случе повторной деаллокации рассказывает где произошла первая деаллокация
+   * @param filename
+   * @param line
+   * @param function_name
+   * @param ptr
+   */
   void  ffreed(const char *filename, unsigned int line, const char *function_name,  void  *ptr)
   {
     if (ptr)
