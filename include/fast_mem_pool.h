@@ -31,9 +31,6 @@
 #ifndef DEF_Average_Allocation
 #define DEF_Average_Allocation  655
 #endif
-#ifndef DEF_Need_Registry
-#define DEF_Need_Registry  false
-#endif
 #ifndef DEF_Raise_Exeptions
 #define DEF_Raise_Exeptions  true
 #endif
@@ -86,7 +83,7 @@
 */
 template<int Leaf_Size_Bytes = DEF_Leaf_Size_Bytes, int Leaf_Cnt = DEF_Leaf_Cnt,
   int Average_Allocation = DEF_Average_Allocation, bool Do_OS_malloc = DEF_Do_OS_malloc,
-  bool Need_Registry = DEF_Need_Registry,  bool Raise_Exeptions = DEF_Raise_Exeptions>
+  bool Raise_Exeptions = DEF_Raise_Exeptions>
 class FastMemPool
 {
 public:
@@ -484,7 +481,6 @@ private:
   int DLeaf_Cnt { Leaf_Cnt };
   int DAverage_Allocation { Average_Allocation };
   bool DDo_OS_malloc{ Do_OS_malloc };
-  bool DNeed_Registry { Need_Registry };
   bool DRaise_Exeptions { Raise_Exeptions };
 #endif
 };
