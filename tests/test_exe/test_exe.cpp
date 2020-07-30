@@ -14,6 +14,7 @@ extern bool  test_stl_allocator2();
 extern bool  test_buf_overflow1();
 extern bool  test_random_access1();
 extern bool  test_base_usage();
+extern bool  test_memcontrol1();
 
 using TestFun = std::function<bool(void)>;
 std::vector<TestFun> vec_fun;
@@ -57,15 +58,16 @@ int main(int argc, char** argv)
     if (!seconds) seconds = 60;
   }
 
-  //vec_fun.emplace_back(test_random_access1);
-  //vec_fun.emplace_back(test_allocator1);
-  //vec_fun.emplace_back(test_stl_allocator2);
+  vec_fun.emplace_back(test_memcontrol1);
+  vec_fun.emplace_back(test_random_access1);
+  vec_fun.emplace_back(test_allocator1);
+  vec_fun.emplace_back(test_stl_allocator2);
   vec_fun.emplace_back(test_base_usage);
-//  if constexpr(DEF_Raise_Exeptions)
-//  {
-//    vec_fun.emplace_back(test_exception1);
-//    vec_fun.emplace_back(test_buf_overflow1);
-//  }
+  if constexpr(DEF_Raise_Exeptions)
+  {
+    vec_fun.emplace_back(test_exception1);
+    vec_fun.emplace_back(test_buf_overflow1);
+  }
 
   std::cout << "started " << threads << " threads for " << seconds << "seconds\n";
 

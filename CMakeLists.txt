@@ -35,7 +35,6 @@ message("DEF_Leaf_Cnt: ${DEF_Leaf_Cnt}")
 set(DEF_Average_Allocation "512" CACHE PATH "Average allocation from malloc")
 message("DEF_Average_Allocation: ${DEF_Average_Allocation}")
 
-option(DEF_Need_Registry "Need registry of all allocations" OFF)
 option(DEF_Raise_Exeptions "Need raise exeptions on Errors" ON)
 option(DEF_Do_OS_malloc "If this memory pool depleted go do OS malloc" ON)
 
@@ -92,16 +91,8 @@ set(SPEC_DEFINITIONS
       DEF_Leaf_Size_Bytes=${DEF_Leaf_Size_Bytes}
       DEF_Leaf_Cnt=${DEF_Leaf_Cnt}
       DEF_Average_Allocation=${DEF_Average_Allocation}
-      DEF_Need_Registry=${DEF_Need_Registry}
   )
 
-if (DEF_Need_Registry)
-  set(SPEC_DEFINITIONS ${SPEC_DEFINITIONS}
-    DEF_Need_Registry=true)
-else()
-  set(SPEC_DEFINITIONS ${SPEC_DEFINITIONS}
-    DEF_Need_Registry=false)
-endif()
 
 if (DEF_Raise_Exeptions)
   set(SPEC_DEFINITIONS ${SPEC_DEFINITIONS}
