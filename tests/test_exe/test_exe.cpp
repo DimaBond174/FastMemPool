@@ -6,26 +6,33 @@
 #include <cstdlib>
 #include "specstatic.h"
 
-#define DEF_Raise_Exeptions false
-
+// Importing test methods from other translation units:
 extern bool  test_allocator1();
 extern bool  test_exception1();
 extern bool  test_stl_allocator2();
-extern bool  test_buf_overflow1();
 extern bool  test_random_access1();
 extern bool  test_base_usage();
 extern bool  test_memcontrol1();
 
+// For the convenience of a random choice, we will emplace these methods into a vector:
 using TestFun = std::function<bool(void)>;
 std::vector<TestFun> vec_fun;
+
+// Global switch to terminate all tests in all threads:
 std::atomic_bool  keep_run  {  true  };
 
+/**
+ * @brief thread_fun
+ * Поточный запускатор методов согласно случайному выбору
+ * Thread method launcher according to random selection
+ */
 void  thread_fun()
 {
   int  id  = 0;
   while (keep_run.load(std::memory_order_acquire))
   {
     id  =  rand() % vec_fun.size();
+    // Run random test:
     if (!vec_fun[id]())
     {
       throw std::range_error("Косяк! брр.. strange_error!");
@@ -43,18 +50,26 @@ void print_usage() {
   return;
 }
 
+/**
+ * @brief main
+ * This is the main
+ * @param argc
+ * @param argv
+ * @return
+ */
 int main(int argc, char** argv)
 {
-  std::allocator<int> a1;
+  // How many thread_fun()'s to start:
   int  threads  =  4;
+  // How long thay will test:
   int64_t  seconds  =  60;
   if (argc < 3)
   {
     print_usage();
   } else {
-    threads  =  stoll(argv[1], strlen(argv[1]));
+    threads  =  static_cast<int>(stoll(argv[1], static_cast<int>(strlen(argv[1]))));
     if (!threads)  threads  =  2;
-    seconds  =  stoll(argv[2], strlen(argv[2]));
+    seconds  =  stoll(argv[2], static_cast<int>(strlen(argv[2])));
     if (!seconds) seconds = 60;
   }
 
@@ -65,8 +80,7 @@ int main(int argc, char** argv)
   vec_fun.emplace_back(test_base_usage);
   if constexpr(DEF_Raise_Exeptions)
   {
-    vec_fun.emplace_back(test_exception1);
-    vec_fun.emplace_back(test_buf_overflow1);
+    vec_fun.emplace_back(test_exception1);    
   }
 
   std::cout << "started " << threads << " threads for " << seconds << "seconds\n";

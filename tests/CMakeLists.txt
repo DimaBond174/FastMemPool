@@ -1,3 +1,4 @@
+#  This is test_exe builder
 
 set(SPEC_SRC_COMMON
       ${CMAKE_CURRENT_SOURCE_DIR}/common

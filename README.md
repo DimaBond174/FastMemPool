@@ -60,12 +60,13 @@ class FastMemPool
 {
 };
 
+int Leaf_Size_Bytes;\\ = What size will each memory leaf be in a circular allocator?
+int Leaf_Cnt;\\ = How many leafs of memory will run in a loop?
+int Average_Allocation;\\ = At what level of the remaining memory is the leaf considered depleted and the current leaf is switched
+bool Do_OS_malloc;\\ = If all leafs are exhausted, then whether to ask for memory from the OS malloc?
+bool Raise_Exeptions;\\ = In case of an error, throw std::range_error() or do nothing silently
+
 ```
-int Leaf_Size_Bytes = What size will each memory leaf be in a circular allocator?
-int Leaf_Cnt = How many leafs of memory will run in a loop?
-int Average_Allocation = At what level of the remaining memory is the leaf considered depleted and the current leaf is switched
-bool Do_OS_malloc = If all leafs are exhausted, then whether to ask for memory from the OS malloc?
-bool Raise_Exeptions = In case of an error, throw std::range_error() or do nothing silently
 
 It is convenient to set defaults for these parameters via CMake GUI:
 ![CMakeGUI](cmake.gui.jpg)
@@ -79,3 +80,30 @@ using  TVideoPool = FastMemPool<100000, 10, 1000, false, false>;
 
 ```
 See [test_memcontrol1.cpp](https://github.com/DimaBond174/FastMemPool/blob/master/tests/test_exe/src/cases/test_memcontrol1.cpp) full example.
+
+# STL usage
+There is one more template FastMemPoolAllocator that extends the standard class STL std::allocator<T>.
+This allows you to use FastMemPool it in:
+- to allocate memory and construct objects on it:
+```c++
+
+FastMemPoolAllocator<std::string> myAllocator;
+std::string* str = myAllocator.allocate(3);
+myAllocator.construct(str, "Mother ");
+myAllocator.construct(str + 1, " washed ");
+myAllocator.construct(str + 2, "the frame");
+
+```
+See both methods bool test_Template_method() and bool test_Strategy() in [test_allocator1.cpp](https://github.com/DimaBond174/FastMemPool/blob/master/tests/test_exe/src/cases/test_allocator1.cpp) full example.
+
+- to use inside STL containers:
+```c++
+
+// compile time inject FastMemPoolAllocator:
+std::unordered_map<int,  int, std::hash<int>, std::equal_to<int>, FastMemPoolAllocator<std::pair<const int,  int>> >  umap1;
+
+// runtime inject FastMemPoolAllocator:
+std::unordered_map<int,  int>  umap2(1024, std::hash<int>(), std::equal_to<int>(),  FastMemPoolAllocator<std::pair<const int,  int>>());
+
+```
+See [test_stl_allocator2.cpp](https://github.com/DimaBond174/FastMemPool/blob/master/tests/test_exe/src/cases/test_stl_allocator2.cpphttps://github.com/DimaBond174/FastMemPool/blob/master/tests/test_exe/src/cases/test_stl_allocator2.cpp) full example.

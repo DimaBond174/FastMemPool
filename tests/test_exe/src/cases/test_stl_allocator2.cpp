@@ -12,7 +12,10 @@ extern  std::atomic_bool  keep_run;
  */
 bool test_stl_allocator2()
 {
+  // compile time inject FastMemPoolAllocator:
   std::unordered_map<int,  int, std::hash<int>, std::equal_to<int>, FastMemPoolAllocator<std::pair<const int,  int>> >  umap1;
+
+  // runtime inject FastMemPoolAllocator:
   std::unordered_map<int,  int>  umap2(1024, std::hash<int>(), std::equal_to<int>(),  FastMemPoolAllocator<std::pair<const int,  int>>());
 
   bool  sw  =  false;
