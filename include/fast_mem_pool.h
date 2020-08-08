@@ -37,6 +37,13 @@
 #ifndef DEF_Do_OS_malloc
 #define DEF_Do_OS_malloc  true
 #endif
+#if defined(DEF_Auto_deallocate)
+#ifndef Debug
+#include <set>
+#include <mutex>
+//#include <iostream>
+#endif
+#endif
 
 
 /*
@@ -148,6 +155,14 @@ public:
       {
         // Паттерн "Chain of responsibility" в действии:
         re = static_cast<char*>(malloc(real_size));
+#if defined(DEF_Auto_deallocate)
+   #if not defined(Debug)
+        if (re) {
+          std::lock_guard<std::mutex>  lg(mut_set_alloc_info);
+          set_alloc_info.emplace(re);
+        }
+  #endif
+#endif
       } else {
         if constexpr (Raise_Exeptions)
         {
@@ -207,6 +222,14 @@ public:
     {  // ok, это OS malloc
       // Зачистка чтобы уникальные TAG_my_alloc  не перестали быть уникальными:
       memset(head,  0,  sizeof(AllocHeader));
+#if defined(DEF_Auto_deallocate)
+   #if not defined(Debug)
+        {
+          std::lock_guard<std::mutex>  lg(mut_set_alloc_info);
+          set_alloc_info.erase(head);
+        }
+  #endif
+#endif
       free(head);
     }  else  {
       // это чужая аллокация, Exception
@@ -326,12 +349,34 @@ public:
     return &fastMemPool;
   }
 
-  ~FastMemPool()  noexcept
+  ~FastMemPool()
   {
     for (int   i  =  0;  i  < Leaf_Cnt ;  ++i)
     {
       if (leaf_array[i].buf)  free(leaf_array[i].buf);
     }
+#if defined(DEF_Auto_deallocate)
+    #if defined(Debug)
+    {
+      std::lock_guard<std::mutex>  lg(mut_map_alloc_info);
+      for (auto &&it : map_alloc_info)
+      {
+        free(it.first);
+      }
+      map_alloc_info.clear();
+    }
+    #else
+    {
+      std::lock_guard<std::mutex>  lg(mut_set_alloc_info);
+      for (auto &&it : set_alloc_info)
+      {
+        //std::cout << " auto deallocated :" << (uint64_t(it)) << std::endl;
+        free(it);
+      }
+      set_alloc_info.clear();
+    }
+    #endif
+#endif
     return;
   }
 
@@ -482,6 +527,11 @@ private:
   int DAverage_Allocation { Average_Allocation };
   bool DDo_OS_malloc{ Do_OS_malloc };
   bool DRaise_Exeptions { Raise_Exeptions };
+#else
+  #if defined(DEF_Auto_deallocate)
+  std::set<void *>  set_alloc_info;
+  std::mutex  mut_set_alloc_info;
+  #endif
 #endif
 };
 

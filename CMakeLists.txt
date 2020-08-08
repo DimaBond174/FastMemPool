@@ -37,6 +37,7 @@ message("DEF_Average_Allocation: ${DEF_Average_Allocation}")
 
 option(DEF_Raise_Exeptions "Need raise exeptions on Errors" ON)
 option(DEF_Do_OS_malloc "If this memory pool depleted go do OS malloc" ON)
+option(DEF_Auto_deallocate "Automatically deallocate memory taken by OS malloc" OFF)
 
 
 set(SPEC_PROPERTIES
@@ -89,8 +90,7 @@ set(SPEC_DEFINITIONS
       ${SPEC_BUILD}
       SPEC_VERSION="${Proj_VERSION}"
       DEF_Leaf_Size_Bytes=${DEF_Leaf_Size_Bytes}
-      DEF_Leaf_Cnt=${DEF_Leaf_Cnt}
-      DEF_Average_Allocation=${DEF_Average_Allocation}
+      DEF_Leaf_Cnt=${DEF_Leaf_Cnt}      
   )
 
 
@@ -109,6 +109,12 @@ else()
   set(SPEC_DEFINITIONS ${SPEC_DEFINITIONS}
     DEF_Do_OS_malloc=false)
 endif()
+
+if (DEF_Auto_deallocate)
+  set(SPEC_DEFINITIONS ${SPEC_DEFINITIONS}
+    DEF_Auto_deallocate)
+endif()
+
 
 if (Provide_inline_unit_tests)
   message("will compile with Provide_inline_unit_tests")

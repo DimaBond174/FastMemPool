@@ -1,5 +1,6 @@
 #include "fast_mem_pool.h"
 #include <memory>
+#include <iostream>
 
 static constexpr int FMALLOC_SIZE  { 1000 };
 
@@ -36,8 +37,11 @@ bool  test_exception1()
       re = false;
       free2(get_singletone2(), test_ptr);
   } catch (std::range_error e) {
-      //std::cerr << e.what() << std::endl;
+      std::cerr << "catched try №1: " << e.what() << std::endl;
       re = !re;
+  } catch (...)
+  {
+    std::cerr << "catched: test_exception1::try №1" << std::endl;
   }
 
   if (re)
@@ -48,9 +52,13 @@ bool  test_exception1()
     try {
         free1(get_singletone1(), test_ptr);
     } catch (std::range_error e) {
-        //std::cerr << e.what() << std::endl;
+        std::cerr << "catched try №2: " << e.what() << std::endl;
         re = !re;
+    } catch (...)
+    {
+      std::cerr << "catched: test_exception1::try №2" << std::endl;
     }
+
     FFREE(test_shared, test_ptr);
   }
 

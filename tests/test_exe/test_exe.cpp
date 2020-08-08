@@ -13,6 +13,9 @@ extern bool  test_stl_allocator2();
 extern bool  test_random_access1();
 extern bool  test_base_usage();
 extern bool  test_memcontrol1();
+#if defined (DEF_Auto_deallocate)
+extern bool  test_auto_deallocate();
+#endif
 
 // For the convenience of a random choice, we will emplace these methods into a vector:
 using TestFun = std::function<bool(void)>;
@@ -58,7 +61,11 @@ void print_usage() {
  * @return
  */
 int main(int argc, char** argv)
-{
+{   
+  FastMemPool<100000000, 1, 1024, true, true>  bulletproof_mempool;
+  void *ptr = bulletproof_mempool.fmalloc(1234567);
+  bulletproof_mempool.ffree(ptr);
+
   // How many thread_fun()'s to start:
   int  threads  =  4;
   // How long thay will test:
@@ -80,8 +87,11 @@ int main(int argc, char** argv)
   vec_fun.emplace_back(test_base_usage);
   if constexpr(DEF_Raise_Exeptions)
   {
-    vec_fun.emplace_back(test_exception1);    
+    vec_fun.emplace_back(test_exception1);
   }
+#if defined (DEF_Auto_deallocate)
+  vec_fun.emplace_back(test_auto_deallocate);
+#endif
 
   std::cout << "started " << threads << " threads for " << seconds << "seconds\n";
 
