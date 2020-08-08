@@ -177,10 +177,10 @@ public:
       if (do_OS_malloc)
       {
         head->leaf_id  =  OS_malloc_id;
-        head->tag  =  TAG_OS_malloc;
+        head->tag_this =  TAG_OS_malloc;
       } else {
         head->leaf_id  =  leaf_id;
-        head->tag  =  TAG_my_alloc  +  leaf_id;
+        head->tag_this = ((uint64_t)this) + leaf_id;
       }
       head->size  =  allocation_size;
       return  (re + sizeof(AllocHeader));
@@ -200,7 +200,7 @@ public:
     AllocHeader  *head  =  reinterpret_cast<AllocHeader  *>(to_free);
     if  (0 <= head->size  &&  head->size < Leaf_Size_Bytes
          &&  0 <= head->leaf_id  &&  head->leaf_id < Leaf_Cnt
-         &&  TAG_my_alloc == (head->tag - head->leaf_id)
+         && ((uint64_t)this) == (head->tag_this - head->leaf_id)
          &&  leaf_array[head->leaf_id].buf)
     {  //  ок, это моя аллокация
       const int  real_size = head->size  +  sizeof(AllocHeader);
@@ -216,7 +216,7 @@ public:
 
       // Зачистка чтобы уникальные TAG_my_alloc  не перестали быть уникальными:
       memset(head,  0,  sizeof(AllocHeader));
-    }  else if (TAG_OS_malloc  ==  head->tag
+    }  else if (TAG_OS_malloc  ==  head->tag_this
          &&  OS_malloc_id  ==  head->leaf_id
          &&  head->size > 0   )
     {  // ok, это OS malloc
@@ -256,7 +256,7 @@ public:
     AllocHeader  *head  =  reinterpret_cast<AllocHeader  *>(static_cast<char  *>(base_alloc_ptr)  -  sizeof(AllocHeader));
     if  (0 <= head->size  &&  head->size < Leaf_Size_Bytes
          &&  0 <= head->leaf_id  &&  head->leaf_id < Leaf_Cnt
-         &&  TAG_my_alloc == (head->tag - head->leaf_id))
+         && ((uint64_t)this) == (head->tag_this - head->leaf_id))
     {  //  ок, это FastMemPool аллокация
       // проверим этого ли экземпляра FastMemPool:
       char  *start  =  static_cast<char  *>(base_alloc_ptr);
@@ -281,7 +281,7 @@ public:
             throw std::range_error("FastMemPool::check_access: out of Leaf");
         }
       } // elseif (!buf
-    }  else  if ( TAG_OS_malloc  ==  head->tag
+    }  else  if ( TAG_OS_malloc  ==  head->tag_this
          &&  OS_malloc_id  ==  head->leaf_id
          &&  head->size > 0 )
     {
@@ -494,9 +494,9 @@ private:
   /*
     Заголовок каждой аллокации
     Позволяет быстро оценить своя ли аллокация и откуда:
-    tag - некое уникальное число, маловероятное к встрече в RAM,
+    tag_this - уникальное число, маловероятное к встрече в RAM,
       при этом идёт взаимная проверка с leaf_id:
-      если 2020071700 + leaf_id  !=  tag  или для OS malloc != -OS_malloc_id,  значит это чужая аллокация
+      если tag - leaf_id  !=  this  или для OS malloc != -OS_malloc_id,  значит это чужая аллокация
     leaf_id - если отрицательное {  -2020071708  } => аллокация была сделана в OS malloc,
           если положительное { 0 .. 255 } => аллокация в leaf_array[i],
           иначе это не наша аллокация и мы с ней  не работаем
@@ -506,9 +506,8 @@ private:
 */
   const int  OS_malloc_id  {  -2020071708  };
   const int  TAG_OS_malloc  {  1020071708  };
-  const int  TAG_my_alloc  {  2020071700  };
   struct AllocHeader {
-    int  tag  {  2020071700  };  //  метка своих аллокаций: 2020071700 + leaf_id
+    uint64_t  tag_this  {  2020071700  };  //  метка своих аллокаций: this + leaf_id
     int  size;  // размер аллокации
     int  leaf_id  {  -2020071708  };  // быстрый доступ к листу аллокации
   };
@@ -588,8 +587,8 @@ struct FastMemPoolNull
 
 template<class T, class FAllocator = FastMemPoolNull >
 struct FastMemPoolAllocator : public std::allocator<T>  {
-  typedef T value_type;  
-  using  MyAllocatorType = FAllocator;  
+  typedef T value_type;
+  using  MyAllocatorType = FAllocator;
   MyAllocatorType * p_allocator  {  nullptr  };
   FastMemPoolAllocator() = default;
   FastMemPoolAllocator(MyAllocatorType  *in_allocator) : p_allocator(in_allocator) { }
@@ -618,7 +617,7 @@ struct FastMemPoolAllocator : public std::allocator<T>  {
   } // alloc
 
   void deallocate(T* p,  std::size_t) noexcept
-  {    
+  {
     if constexpr(std::is_same<FAllocator, FastMemPoolNull>::value)
     {
       FFREE(FastMemPool<>::instance(),  p);
