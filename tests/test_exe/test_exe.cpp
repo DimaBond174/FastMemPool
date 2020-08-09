@@ -80,6 +80,7 @@ int main(int argc, char** argv)
     if (!seconds) seconds = 60;
   }
 
+  // Prepare test cases (can comment out unnecessary):
   vec_fun.emplace_back(test_memcontrol1);
   vec_fun.emplace_back(test_random_access1);
   vec_fun.emplace_back(test_allocator1);
@@ -108,8 +109,12 @@ int main(int argc, char** argv)
     (std::chrono::system_clock::now().time_since_epoch()).count() - start < msecs) {
     std::this_thread::sleep_for(std::chrono::milliseconds(100));
   }
+
+  // Stop all threads:
   keep_run.store(false, std::memory_order_release);
   std::cerr << "going to stop via keep_run = false \n";
+
+  // Wait:
   for (auto& it : vec_threads) {
       it.join();
   }

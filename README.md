@@ -103,7 +103,7 @@ See [test_memcontrol1.cpp](https://github.com/DimaBond174/FastMemPool/blob/maste
 
 # STL usage
 There is one more template FastMemPoolAllocator that extends the standard class STL std::allocator<T>.
-This allows you to use FastMemPool it in:
+This allows you to use FastMemPool for:
 - to allocate memory and construct objects on it:
 ```c++
 

@@ -9,6 +9,7 @@ extern  std::atomic_bool  keep_run;
  * @brief test_stl_allocator2
  * @return
  *  Тестируем подстановку аллокатора в STL контейнеры
+ *  Testing allocator substitution in STL containers
  */
 bool test_stl_allocator2()
 {

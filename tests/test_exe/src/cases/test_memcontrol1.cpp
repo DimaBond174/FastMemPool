@@ -80,6 +80,7 @@ static void * video_camera(WorkStaff  *work_staff)
  * @brief test_allocator1
  * @return
  *  Имитируем часть реально существующей системы видеоаналитики
+ * We simulate part of a real-life video analytics system
  */
 bool  test_memcontrol1()
 {

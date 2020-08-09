@@ -3,14 +3,15 @@
 /**
  * @brief test_allocator1
  * @return
- *  Тестируем стандартное использование аллокатора для конструирования объектов
+ *  Testing the standard use of the allocator for constructing objects
  */
+
 
 bool test_singletone()
 {
   /*
-   * Так как не указываем второй параметр шаблона (конкретизация шаблона FastMemPool),
-   * то шаблон должен раскрыться на использование FastMemPool<>::instance()
+   * Since we do not specify the second parameter of the template (instantiating the FastMemPool template),
+   * the template should be expanded to use FastMemPool <> :: instance ()
  */
   FastMemPoolAllocator<std::string> myAllocator;
   // allocate space for three strings
@@ -33,7 +34,7 @@ bool test_singletone()
 bool test_Template_method()
 {
   /*
-   * Инжектируем метод аллокации в Compile time (будет создан SingleTone такого типа)
+   * Inject the allocation method template at Compile time (a SingleTone of this type will be created)
  */
   FastMemPoolAllocator<std::string, FastMemPool<111, 11> > myAllocator;
   // allocate space for three strings
@@ -56,7 +57,7 @@ bool test_Template_method()
 bool test_Strategy()
 {
   /*
-   * Инжектируем Стратегию аллокации в Runtime (будем использовать конкретный экземпляр такого типа)
+   * We inject the Allocation Strategy instance while Runtime (we will use a specific instance of this type)
  */
   using MyAllocatorType = FastMemPool<333, 33>;
   MyAllocatorType  fastMemPool;  // instance of

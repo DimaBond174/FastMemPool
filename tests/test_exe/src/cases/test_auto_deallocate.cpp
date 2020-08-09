@@ -3,7 +3,7 @@
 /**
  * @brief test_auto_deallocate
  * @return
- *  Тестируем автоматический возврат памяти при OS malloc
+ *  Testing automatic memory return for OS malloc
  */
 
 bool test_auto_deallocate()

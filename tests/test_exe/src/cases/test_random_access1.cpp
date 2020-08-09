@@ -7,6 +7,11 @@ extern  std::atomic_bool  keep_run;
 /**
  * @brief test_random_access1
  * @return
+ * Testing the allocation of random allocations
+* 1) Allocate a random volume
+* 2) We take a random allocation from the available ones and try to change it correctly
+* 3) We take a random allocation from the available ones and try to change it knowingly going beyond our boundaries
+*
  *  Тестируем аллокацию случайных аллокаций
  * 1) Аллоцируем случайный объём
  * 2) Берём случайную аллокацию из имеющихся и пытаемся изменить корректно
@@ -15,6 +20,7 @@ extern  std::atomic_bool  keep_run;
 bool  test_random_access1()
 {
   // Сиглтон чтобы гарантированно поконкурировать с другими нитями:
+  // Sigleton to be guaranteed to compete with other threads:
   auto && fastMemPool  =  FastMemPool<>::instance();
   struct TestStruct {
     TestStruct() :  array(nullptr), array_size (0)  {}

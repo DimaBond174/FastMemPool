@@ -47,45 +47,37 @@
 
 
 /*
- * Вашему вниманию простой template аллокатора с потокобезопасным циклическим буфером.
- * Судя по обилию новых моделей велосипедов на современных улицах,
- * понятие "не надо изобретать велосипед" больше не актуально..
- *
- * Преимущества:
- * 1) Скорость работы
- * 2) Потокобезопасный Аллокатор без мьютексов или циклов ожидания
- * 3) Функционал защиты доступа к памяти: опознаёт свои аллокации,
- * а также контроллирует выход в чужую область, в том числе между своими аллокациями.
- * ( в то время как OS жалуется только если залезли в чужую память )
- * 4) Быстрая деаллокация ( нет затрат на дополнительные структуры реестров аллокаций )
- * 5) Если закончился свой пул RAM, аллокация будет произведена через OS malloc, но при этом будет
- * сохранен функционал 2) защиты доступа к памяти в полном объёме.
- * Дополнительно:
- *  - возможно ведения реестра аллокаций для отладки ( включается в код в compile time если defined(Debug))
- *  Например: при повторной деаллокации, в Exception раскажет где произошла первая:
+ * FastMemPool
+ * Fast thread-safe C++ recycler allocator with memory access control functions.
+ * Usage sample example:
+
+ FastMemPool<>  fastMemPool;
+ instead of malloc:
+ my_array[i]  =  static_cast<int *>(fastMemPool.fmalloc(rand() % 256 + 32));
+ my_array[j]  =  static_cast<int *>(FMALLOC(&fastMemPool, (rand() % 256 + 32)));
+
+ instead of free:
+ fastMemPool.ffree(my_array[i]);
+ FFREE(&fastMemPool, my_array[j]);
+
+ The macros version (FMALLOC, FFREE) is used to provide information about
+ the specific location of the error (file, line number, method name).
+
+ Usage examples you can find here:
+ https://github.com/DimaBond174/FastMemPool
+
+ * Benefits:
+ * 1) Work speed
+ * 2) Saving CPU time (can work without mutexes, no atomic waiting cycles)
+ * 3) Memory access protection functionality: recognizes its allocations,
+ * and also controls buffer overflow, including between its own allocations (while the OS only complains if goes out process memory)
+ * 4) Fast deallocation (no cost for additional allocation register structures)
+ * 5) If your RAM pool has run out, allocation will be performed through OS malloc,
+ * but the functionality (2) of protecting access to memory in full will be preserved.
+ * Additionally:
+ *  - it is possible to maintain a register of allocations for debugging (included in the code at compile time if defined (Debug))
+ *  For example: upon repeated deallocation, in Exception it will tell where the first one happened:
  * "FastMemPool::ffreed: this pointer has already been freed from: test_exe.cpp, at 9  line, in free1"
- *
- * Налагаемые обязательства:
- *  - для работы циклического буфера FastMemPool будет
- *    аллоцировано Leaf_Cnt листов памяти размером Leaf_Size_Bytes.
- *    Если Leaf_Size_Bytes не хватит для требуемой аллокации, то будет выполнен OS malloc -
- *    поэтому Leaf_Size_Bytes должен быть значительно больше среднестатистической Вашей аллокации.
- *
- * - желательно (но не обязательно) чтобы аллокации проходили цикл равномерно,
- *   Например: если аллокации идут для сессий пользователей, то эти сессии должны быть ограничены во времени.
- *  (листы аллокаций возвращаются в работу после истощения с последней деаллокацией на своём листе,
- *   если кто-то держит аллокацию бесконечно, то соответствующий один из Leaf_Cnt листов будет простаивать.
- *   если заблокировать все Leaf_Cnt листов, то преимуществом перед OS malloc останется только контроль памяти)
- *
- * - желательно FastMemPool конструировать когда ещё на сервере оперативной памяти в избытке, так как
- *   если из Leaf_Cnt листов несколько OS не сможет аллоцировать, то эти nullptr прорешины не будут работать.
- *
- * Примеры использования:
- * Обычное, с  определением размера каждого из Leaf_Cnt листов памяти:
- *
- * Подключение ведения списка аллокаций  для контроля и автодеаллокации:
- *
- * Подключение вызова Exeptions  на ошибки:
  *
 */
 template<int Leaf_Size_Bytes = DEF_Leaf_Size_Bytes, int Leaf_Cnt = DEF_Leaf_Cnt,
@@ -96,43 +88,40 @@ class FastMemPool
 public:
   /**
    * @brief fmalloc
-   * Функция аллокации вместо malloc
-   * @param allocation_size  -  аллоцируемый объём
-   * @return
+   * Allocation function instead of malloc
+   * @param allocation_size  -  volume to allocate
+   * @return - allocation ptr
    */
-  void  * fmalloc(std::size_t  allocation_size)  noexcept
+  void  * fmalloc(std::size_t  allocation_size)
   {
-    // Аллокация будет в себя включать заголовок со служебной информацией
+    // Allocation will include a header with service information:
     const int  real_size = allocation_size  +  sizeof(AllocHeader);
-    // Текущий лист RAM который сейчас распределяется, но в целом всё равно откуда:
+    // Starting leaf for finding the allocation place:
     const int start_leaf = cur_leaf.load(std::memory_order_relaxed);
-    // Идентификатор листа для циклического обхода:
+    // Selected leaf identifier:
     int leaf_id = start_leaf;
-    // Результирующая аллокация:
+    // Resulting allocation:
     char  *re  =  nullptr;
 
     /*
-     * Цикл поиска доступной аллокации пройдёт по кругу leaf_array за счёт переполнения uint8_t.
-     * Выход из цикла в момент завершения круга прохода когда  снова встретим start_leaf.
-     * В случае невозможности сделать аллокацию в собственном пуле памяти,
-     *  произойдёт эскалация до OS malloc, при этом функционал по контролю доступа останется рабочим.
+      Exit the loop at the end of the loop when we meet start_leaf again.
+      If it is impossible to make an allocation in your own memory pool,
+      an escalation to OS malloc will occur, but the access control functionality will remain operational.
    */
     do {
       const int available  =  leaf_array[leaf_id].available.load(std::memory_order_acquire);
       if (available  >=  real_size)
       {
-        // резервируем операцию  = защита от сброса Leaf в исходное:
-        //leaf_array[leaf_id].allocated.fetch_add(real_size, std::memory_order_release);
-        // резервируем память (раздача буфера идёт с конца откусыванем):
+        // we reserve memory (the buffer is distributed from the end with a bite):
         const int  available_after  =  leaf_array[leaf_id].available.fetch_sub(real_size, std::memory_order_acq_rel)  -  real_size;
-        // и в случае успеха остаться должно было вернуться положительное число,
-        // иначе мы бы пробили дно буфера:
+        // and if successful, a positive number should have returned,
+        // otherwise we would have broken through the bottom of the buffer:
         if (available_after >= 0)
-        {  // результирующий адрес аллокации легко получить, ведь он начинается
-          // сразу за available, т.к. адресация с [0] то это и есть available:
+        {  // the resulting distribution address is easy to obtain, because it starts immediately
+          // after "available", since addressing from &[0] then this is "buf + available":
           re  =  leaf_array[leaf_id].buf + available_after;
           if (available_after < Average_Allocation)
-          {  // Расскажем остальным потокам что следует использовать другую страницу памяти:
+          {  // Let's tell the rest of the threads to use a different memory page:
             const int next_id = start_leaf + 1;
             if (next_id >= Leaf_Cnt)
             {
@@ -141,7 +130,7 @@ public:
               cur_leaf.store(next_id, std::memory_order_release);
             }
           }
-          break; // закончили поиск, отдаём указатель аллокации
+          break; // finished the search, return the allocation pointer
         }
       }
       ++leaf_id;
@@ -150,7 +139,7 @@ public:
 
     bool  do_OS_malloc  =  !re;
     if  (do_OS_malloc)
-    {  // Вот сейчас произойдёт эскалация до OS malloc:
+    {  // Now the escalation to OS malloc will occur:
       if (Do_OS_malloc)
       {
         // Паттерн "Chain of responsibility" в действии:
@@ -172,7 +161,7 @@ public:
     }
 
     if (re)
-    {
+    { // if the allocation was successful, then fill in the header:
       AllocHeader  *head  =  reinterpret_cast<AllocHeader  *>(re);
       if (do_OS_malloc)
       {
@@ -191,36 +180,37 @@ public:
 
 
   /**
-   * @brief ffree  -  функция освобождения аллокации вместо free
-   * @param ptr  -  указатель на аллокацию через fmaloc
+   * @brief ffree  -  function to release allocation instead of "free"
+   * @param ptr  -  allocation pointer obtained earlier via fmaloc
    */
   void  ffree(void  *ptr)
   {
+    // Rewind back to get the AllocHeader:
     char  *to_free  =  static_cast<char  *>(ptr)  -  sizeof(AllocHeader);
     AllocHeader  *head  =  reinterpret_cast<AllocHeader  *>(to_free);
     if  (0 <= head->size  &&  head->size < Leaf_Size_Bytes
          &&  0 <= head->leaf_id  &&  head->leaf_id < Leaf_Cnt
          && ((uint64_t)this) == (head->tag_this - head->leaf_id)
          &&  leaf_array[head->leaf_id].buf)
-    {  //  ок, это моя аллокация
+    {  //  ok this is my allocation
       const int  real_size = head->size  +  sizeof(AllocHeader);
       const int  deallocated  =  leaf_array[head->leaf_id].deallocated.fetch_add(real_size, std::memory_order_acq_rel)  +  real_size;
       int  available  =  leaf_array[head->leaf_id].available.load(std::memory_order_acquire);
       if (deallocated  == (Leaf_Size_Bytes - available))
-      {  // всё что было аллоцировано теперь возвращено, попытаемся, осторожно, сбросить Leaf
+      {  // everything that was allocated is now returned, we will try, carefully, reset the Leaf
         if (leaf_array[head->leaf_id].available.compare_exchange_strong(available,  Leaf_Size_Bytes))
         {
           leaf_array[head->leaf_id].deallocated  -=  deallocated;
         }
       }
 
-      // Зачистка чтобы уникальные TAG_my_alloc  не перестали быть уникальными:
+      // Cleanup so that unique TAG_my_alloc will be keep unique in RAM:
       memset(head,  0,  sizeof(AllocHeader));
     }  else if (TAG_OS_malloc  ==  head->tag_this
          &&  OS_malloc_id  ==  head->leaf_id
          &&  head->size > 0   )
     {  // ok, это OS malloc
-      // Зачистка чтобы уникальные TAG_my_alloc  не перестали быть уникальными:
+      // Cleanup so that unique TAG_my_alloc will be keep unique in RAM:
       memset(head,  0,  sizeof(AllocHeader));
 #if defined(DEF_Auto_deallocate)
    #if not defined(Debug)
@@ -232,7 +222,7 @@ public:
 #endif
       free(head);
     }  else  {
-      // это чужая аллокация, Exception
+      // this is someone else's allocation, Exception
       if constexpr (Raise_Exeptions)
       {
           throw std::range_error("FastMemPool::ffree: this is someone else's allocation");
@@ -242,13 +232,13 @@ public:
   }
 
   /**
-   * @brief check_access  -  проверка возможности доступа к целевой области памяти
-   * @param base_alloc_ptr - предполагаемый адрес базовой аллокации из FastMemPool
-   * @param target_ptr  -  начало целевой области памяти
-   * @param target_size  -  размер структуры, к которой нужен доступ
-   * @return - true если целевая область памяти принадлежит базовой аллокации из FastMemPool
-   * Преимущества: позволяет определить не залез ли в другую СВОЮ аллокацию,
-   * в то время как OS ругается только если залез в чужую.
+   * @brief check_access  -  checking the accessibility of the target memory area
+   * @param base_alloc_ptr - the assumed address of the base allocation from FastMemPool
+   * @param target_ptr  -  start of target memory area
+   * @param target_size  -  the size of the structure to access
+   * @return - true if the target memory area belongs to the base allocation from FastMemPool
+   * Advantages: allows you to determine whether you have climbed into another OWN allocation,
+   * while the OS swears only if it climbed out of process RAM
    */
   bool  check_access(void  *base_alloc_ptr,  void  *target_ptr,  std::size_t  target_size)
   {
@@ -257,13 +247,12 @@ public:
     if  (0 <= head->size  &&  head->size < Leaf_Size_Bytes
          &&  0 <= head->leaf_id  &&  head->leaf_id < Leaf_Cnt
          && ((uint64_t)this) == (head->tag_this - head->leaf_id))
-    {  //  ок, это FastMemPool аллокация
-      // проверим этого ли экземпляра FastMemPool:
+    {  //  ok, this is FastMemPool allocation
       char  *start  =  static_cast<char  *>(base_alloc_ptr);
       char  *end  =  start  +  head->size;
       char  *buf  =  leaf_array[head->leaf_id].buf;
       if (buf  &&  buf  <=  start  &&  (buf  +  Leaf_Size_Bytes) >= end)
-      { // Проверим вышел ли за пределы аллокации:
+      { // Let's check whether it has gone beyond the allocation limits:
         char  *target_start  =  static_cast<char  *>(target_ptr);
         char  *target_end  =  target_start  +  target_size;
         if  (start  <=  target_start  &&  target_end <= end)
@@ -285,7 +274,7 @@ public:
          &&  OS_malloc_id  ==  head->leaf_id
          &&  head->size > 0 )
     {
-      // Проверим вышел ли за пределы аллокации:
+      // Let's check whether it has gone beyond the allocation limits:
       char  *start  =  static_cast<char  *>(base_alloc_ptr);
       char  *end  =  start  +  head->size;
       char  *target_start  =  static_cast<char  *>(target_ptr);
@@ -310,7 +299,7 @@ public:
   } // check_access
 
   /**
-   * @brief FastMemPool - конструктор
+   * @brief FastMemPool - construct
    */
   FastMemPool()  noexcept
   {
@@ -339,10 +328,10 @@ public:
   }  // FastMemPool
 
   /**
-   * @brief instance - Реализация синглтона, если кому необходим вдруг
+   * @brief instance - Singleton implementation, if anyone needs it all of a sudden
    * @return
-   * ВАЖНО: полагаемся на то что линковщик сможет убрать дубли этого метода
-   * из всех translation unit -ов.. при условии одинаковых параметров шаблона
+    IMPORTANT: we rely on the linker to be able to remove duplicates of this method from all
+    translation units .. provided the template parameters are the same
    */
   static FastMemPool * instance() {
     static FastMemPool  fastMemPool;
@@ -389,7 +378,7 @@ public:
 #if defined(Debug)
   /**
    * @brief fmallocd
-   * Декоратор для метода fmalloc - сохраняет информацию о месте аллокации
+   * Decorator for fmalloc method - stores information about the location of the allocation
    * @param filename
    * @param line
    * @param function_name
@@ -421,9 +410,9 @@ public:
 
   /**
    * @brief ffreed
-   * Декоратор для метода ffree
-   * - сохраняет информацию о месте деаллокации
-   * - в случе повторной деаллокации рассказывает где произошла первая деаллокация
+   * Decorator for the free method
+   * - saves information about the place of deallocation
+   * - in case of re-deallocation, tells where the first deallocation took place
    * @param filename
    * @param line
    * @param function_name
@@ -485,24 +474,22 @@ private:
   struct Leaf
   {
       char  *buf;
-      // available == offset наоборот
+      // available == offset
       std::atomic<int>  available  {  Leaf_Size_Bytes  };
-      // allocated == контроль деаллокаций
+      // control of deallocations:
       std::atomic<int>  deallocated  {  0  };
   };
 
   /*
-    Заголовок каждой аллокации
-    Позволяет быстро оценить своя ли аллокация и откуда:
-    tag_this - уникальное число, маловероятное к встрече в RAM,
-      при этом идёт взаимная проверка с leaf_id:
-      если tag - leaf_id  !=  this  или для OS malloc != -OS_malloc_id,  значит это чужая аллокация
-    leaf_id - если отрицательное {  -2020071708  } => аллокация была сделана в OS malloc,
-          если положительное { 0 .. 255 } => аллокация в leaf_array[i],
-          иначе это не наша аллокация и мы с ней  не работаем
-     size - размер аллокации, если 0 <=  size >=  LeafSizeBytes  - значит чужая аллокация.
-     Заголовок можно получить в любой момент отрицательным смещением относительно адреса
-     аллокации про который знает хозяин аллокации.
+   * AllocHeader
+    Allows you to quickly assess whether your allocation and where:
+    tag_this - a unique number unlikely to occur in RAM,
+       while there is a mutual check with leaf_id:
+      if (tag_this - leaf_id)  !=  this  and  OS malloc != -OS_malloc_id,  then this is someone else's allocation
+    leaf_id == {  -2020071708  } => allocation was done in OS malloc,
+    leaf_id >= 0 => allocation in leaf_array[leaf_id],
+    size - allocation size, if 0 <= size> = LeafSizeBytes - it means someone else's allocation.
+     The header can be obtained at any time by a negative offset relative to the *pointer.
 */
   const int  OS_malloc_id  {  -2020071708  };
   const int  TAG_OS_malloc  {  1020071708  };
@@ -517,15 +504,19 @@ private:
     int  leaf_id  {  -2020071708  };
   };
 
+  // Memory pool:
   Leaf  leaf_array[Leaf_Cnt];
   std::atomic<int>  cur_leaf  {  0  };
+
 #if defined(Debug)
   struct AllocInfo {
-    std::string  who;  // кто произвёл операцию: файл, номер строки кода, в каком методе
-    bool  allocated  {  false  };  //  true - аллоцировано,  false - деаллоцировано
+    std::string  who;  // who performed the operation: file, code line number, in which method
+    bool  allocated  {  false  };  // true - allocated, false - deallocated
   };
   std::map<void *,  AllocInfo>  map_alloc_info;
   std::mutex  mut_map_alloc_info;
+
+  // Just for easy viewing in debug:
   int DLeaf_Size_Bytes  { Leaf_Size_Bytes };
   int DLeaf_Cnt { Leaf_Cnt };
   int DAverage_Allocation { Average_Allocation };
@@ -542,10 +533,10 @@ private:
 
 /**
    * @brief FMALLOC
-   * Функция аллокации вместо malloc
-   * @param iFastMemPool  -  экземпляр FastMemPool в котором проводим аллокацию
-   * @param allocation_size  -  аллоцируемый объём
-   * @return
+   * Allocation function instead of malloc
+   * @param iFastMemPool  -  an instance of FastMemPool in which we allocate
+   * @param allocation_size  -  volume to allocate
+   * @return - allocation ptr
 */
 #if defined(Debug)
 #define FMALLOC(iFastMemPool, allocation_size) \
@@ -556,9 +547,9 @@ private:
 #endif
 
 /**
- * @brief FFREE  -  функция освобождения аллокации вместо free
- * @param iFastMemPool  -  экземпляр FastMemPool в котором проводили аллокацию
- * @param ptr  -  указатель на аллокацию через fmaloc
+ * @brief FFREE  -  function to release allocation instead of "free"
+ * @param iFastMemPool  - an instance of FastMemPool in which we allocate
+ * @param ptr  -  allocation pointer obtained earlier via fmaloc
  */
 #if defined(Debug)
 #define FFREE(iFastMemPool, ptr) \
@@ -569,13 +560,14 @@ private:
 #endif
 
 /**
-   * @brief FCHECK_ACCESS  -  проверка возможности доступа к целевой области памяти
-   * @param base_alloc_ptr - предполагаемый адрес базовой аллокации из FastMemPool
-   * @param target_ptr  -  начало целевой области памяти
-   * @param target_size  -  размер структуры, к которой нужен доступ
-   * @return - true если целевая область памяти принадлежит базовой аллокации из FastMemPool
-   * Преимущества: позволяет определить не залез ли в другую СВОЮ аллокацию,
-   * в то время как OS ругается только если залез в чужую.
+   * @brief FCHECK_ACCESS  -  checking the accessibility of the target memory area
+   * @param iFastMemPool  - an instance of FastMemPool in which we allocate
+   * @param base_alloc_ptr - the assumed address of the base allocation from FastMemPool
+   * @param target_ptr  -  start of target memory area
+   * @param target_size  -  the size of the structure to access
+   * @return - true if the target memory area belongs to the base allocation from FastMemPool
+   * Advantages: allows you to determine whether you have climbed into another OWN allocation,
+   * while the OS swears only if it climbed out of process RAM
  */
 #if defined(Debug)
 #define FCHECK_ACCESS(iFastMemPool, base_alloc_ptr, target_ptr, target_size) \
@@ -590,6 +582,20 @@ struct FastMemPoolNull
   // Null object
 };
 
+/**
+ * FastMemPoolAllocator
+ * == std::allocator<T> template
+ * Default works with SingleTone FastMemPool<>::instance()
+ * FastMemPool can be injected as template method or allocation strategy:
+
+ // inject template (Template method):
+ FastMemPoolAllocator<std::string, FastMemPool<111, 11> > myAllocator;
+
+ // inject instance (Strategy):
+  using MyAllocatorType = FastMemPool<333, 33>;
+  MyAllocatorType  fastMemPool;  // instance of
+  FastMemPoolAllocator<std::string, MyAllocatorType > myAllocator(&fastMemPool);
+ */
 template<class T, class FAllocator = FastMemPoolNull >
 struct FastMemPoolAllocator : public std::allocator<T>  {
   typedef T value_type;
