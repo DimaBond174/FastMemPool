@@ -48,6 +48,23 @@ Macros FMALLOC, FFREE, FCHECK_ACCESS are used to automatically switch between De
 The Debug version saves information about the place of allocation / deallocation (__FILE__, __LINE__, __FUNCTION__).
 This makes it easy to track where a repeated deallocation or access to wrong memory area occurred.
 
+The FastMemPool recognizes its memory and its size by the AllocHeader that is included in each allocation:
+![AllocHeader](allocheader.jpg)
+
+
+```c++
+struct AllocHeader {
+  /*
+   label of own allocations:
+   tag_this = (uint64_t)this + leaf_id */
+  uint64_t  tag_this  {  2020071700  };
+  // allocation size (without sizeof(AllocHeader)):
+  int  size;
+  // allocation place id (Leaf ID  or OS_malloc_id):
+  int  leaf_id  {  -2020071708  };
+};
+```
+
 # Advanced usage
 Template FastMemPool has next compile time parameters:
 
@@ -65,11 +82,14 @@ int Leaf_Cnt;\\ = How many leafs of memory will run in a loop?
 int Average_Allocation;\\ = At what level of the remaining memory is the leaf considered depleted and the current leaf is switched
 bool Do_OS_malloc;\\ = If all leafs are exhausted, then whether to ask for memory from the OS malloc?
 bool Raise_Exeptions;\\ = In case of an error, throw std::range_error() or do nothing silently
-
+DEF_Auto_deallocate = if defined, all allocations will be stored and freed on FastMemPool destruction
 ```
 
 It is convenient to set defaults for these parameters via CMake GUI:
 ![CMakeGUI](cmake.gui.jpg)
+
+or via Qt Creator:
+![QtCreator](qt.cmake.jpg)
 
 For example, if you are processing video, frames are processed by several threads, but the threads do not have time to process the incoming frames.
 Then, in order not to out of computer memory, you skip frames that you do not have time to process.
@@ -106,4 +126,17 @@ std::unordered_map<int,  int, std::hash<int>, std::equal_to<int>, FastMemPoolAll
 std::unordered_map<int,  int>  umap2(1024, std::hash<int>(), std::equal_to<int>(),  FastMemPoolAllocator<std::pair<const int,  int>>());
 
 ```
-See [test_stl_allocator2.cpp](https://github.com/DimaBond174/FastMemPool/blob/master/tests/test_exe/src/cases/test_stl_allocator2.cpphttps://github.com/DimaBond174/FastMemPool/blob/master/tests/test_exe/src/cases/test_stl_allocator2.cpp) full example.
+See [test_stl_allocator2.cpp](https://github.com/DimaBond174/FastMemPool/blob/master/tests/test_exe/src/cases/test_stl_allocator2.cpp) full example.
+
+# Use to protect against buggy programmers
+Use the FastMemPool to shift your wonderful structures so that someone else's buffer overflow is guaranteed not to hit you:
+![wonderful](wonderful.jpg)
+
+For example so:
+```c++
+
+FastMemPool<100000000, 1, 1024, true, true>  bulletproof_mempool;
+void *ptr = bulletproof_mempool.fmalloc(1234567);
+bulletproof_mempool.ffree(ptr);
+
+```

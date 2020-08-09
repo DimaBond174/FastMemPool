@@ -507,9 +507,14 @@ private:
   const int  OS_malloc_id  {  -2020071708  };
   const int  TAG_OS_malloc  {  1020071708  };
   struct AllocHeader {
-    uint64_t  tag_this  {  2020071700  };  //  метка своих аллокаций: this + leaf_id
-    int  size;  // размер аллокации
-    int  leaf_id  {  -2020071708  };  // быстрый доступ к листу аллокации
+    /*
+     label of own allocations:
+     tag_this = (uint64_t)this + leaf_id */
+    uint64_t  tag_this  {  2020071700  };
+    // allocation size (without sizeof(AllocHeader)):
+    int  size;
+    // allocation place id (Leaf ID  or OS_malloc_id):
+    int  leaf_id  {  -2020071708  };
   };
 
   Leaf  leaf_array[Leaf_Cnt];

@@ -96,7 +96,8 @@ bool  test_memcontrol1()
     (std::chrono::system_clock::now().time_since_epoch()).count();
   decltype(start) msecs = 50 * 1000;
   while (std::chrono::duration_cast<std::chrono::milliseconds>
-    (std::chrono::system_clock::now().time_since_epoch()).count() - start < msecs) {
+    (std::chrono::system_clock::now().time_since_epoch()).count() - start < msecs
+         && keep_run.load(std::memory_order_acquire)) {
     std::this_thread::sleep_for(std::chrono::milliseconds(100));
   }
   work_staff.keep_detect.store(false, std::memory_order_release);
