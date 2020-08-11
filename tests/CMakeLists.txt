@@ -45,7 +45,7 @@ message("OS_SRC : ${OS_SRC}")
 
 
 set(EXE_NAME
-	tester.exe
+  tester.exe
 )
 
 set(EXE_INCLUDE
@@ -74,3 +74,34 @@ custom_add_executable(${EXE_NAME}
     "${SPEC_PROPERTIES}"
     )
 
+#==============================
+# Overhead test
+set(EXE2_NAME
+  test_overhead.exe
+)
+
+set(EXE2_INCLUDE
+    ${SPEC_INCLUDE}
+    ${OS_INCLUDE}
+    ${SPEC_SRC_COMMON}
+    ${CMAKE_CURRENT_SOURCE_DIR}/test_overhead
+    )
+
+file(GLOB_RECURSE EXE2_SRC
+       ${CMAKE_CURRENT_SOURCE_DIR}/test_overhead/*.cpp
+   )
+
+set(EXE2_SRC
+    ${EXE2_SRC}
+    ${OS_SRC}
+)
+message("EXE2_SRC : ${EXE2_SRC}")
+
+custom_add_executable(${EXE2_NAME}
+    "${SPEC_BUILD_DIR}"
+    "${EXE2_SRC}"
+    "${EXE2_INCLUDE}"
+    "${SPEC_DEFINITIONS}"
+    "${OS_LIBS}"
+    "${SPEC_PROPERTIES}"
+    )

@@ -43,6 +43,7 @@ bool  test_random_access1()
     }
     int  id  =  rand() % i ;
     auto &&elem = vec_random_mem_chanks[id];
+    elem.array[0] = 12345;
     //Checking whether this is my allocation and whether
     //I will go beyond the allocation limits if I perform an operation
     // on this piece of memory:
