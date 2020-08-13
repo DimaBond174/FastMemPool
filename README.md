@@ -140,3 +140,8 @@ void *ptr = bulletproof_mempool.fmalloc(1234567);
 bulletproof_mempool.ffree(ptr);
 
 ```
+
+# Android test
+Source codes for Android test: [FastMemPool on Android](https://github.com/DimaBond174/test_android_FastMemPool)
+Test results on the ARM processor:
+![android.arm.cut.jpg](android.arm.cut.jpg)
